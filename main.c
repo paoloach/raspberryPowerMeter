@@ -23,7 +23,11 @@ void setPage0(void);
 void printIstantaneusCurrent(void);
 void printIstantaneusVolt(void);
 void printIstantaneusPower(void);
-double binConvert(Register reg, double pow2);
+void printRealPower(void);
+void printRMSVolt(void);
+void printRMSCurrent(void);
+double binConvert(Register * reg, double pow2);
+double range_1_sign(Register * currentRegister);
 
 int main() {
 	int initSPI =  wiringPiSPISetup (0, 500000) ;
@@ -49,6 +53,10 @@ int main() {
 		setPage0();
 		printIstantaneusCurrent();
 		printIstantaneusVolt();
+		printIstantaneusPower();
+		printRealPower();
+		printRMSVolt();
+		printRMSCurrent();
 		i++;
 	}
 	endwin();
@@ -72,27 +80,65 @@ void setPage0(){
 
 void printIstantaneusCurrent(){
 	Register currentRegister = getRegister(7);
-	double current = binConvert(currentRegister, 1);
 	move(0,50);
-	printw("current %0.9f", current);
+	printw("    current %0.9f", range_1_sign(&currentRegister));
 	
 }
 
 void printIstantaneusVolt(){
 	Register currentRegister = getRegister(8);
-	currentRegister.bytes[3]=1;
-	double volt = binConvert(currentRegister, 1);
-	move(0,70);
-	printw("volt %0.9f", volt);
-	
+	move(0,75);
+	printw("    volt %0.9f", range_1_sign(&currentRegister));
 }
 
-double binConvert(Register reg, double pow2) {
-	byte mask = 0x80;
+void printIstantaneusPower(){
+	Register currentRegister = getRegister(9);
+	move(0,100);
+	printw("ist. power %0.9f", range_1_sign(&currentRegister));
+}
+
+void printRealPower(void) {
+	Register currentRegister = getRegister(10);
+	move(1,100);
+	printw("real power %0.9f", range_1_sign(&currentRegister));
+}
+
+void printRMSVolt(void){
+	Register currentRegister = getRegister(11);
+	move(1,50);
+	printw("rms current %0.9f", binConvert(&currentRegister, 0.5));
+}
+void printRMSCurrent(void){
+	Register currentRegister = getRegister(12);
+	move(1,75);
+	printw("rms volt %0.9f", binConvert(&currentRegister, 0.5));
+}
+
+double range_1_sign(Register * currentRegister){
+	int sign = currentRegister->bytes[1] & 0x80;
+	currentRegister->bytes[1] = currentRegister->bytes[1] & 0x7F;
+	double current = binConvert(currentRegister, 1);
+	if (currentRegister->bytes[1] & 0x80){
+		current = -current;
+	}
+	return current;
+}
+
+double binConvert(Register * reg, double pow2) {
+	unsigned char mask = 0x80;
 	double res=0;
-	
+
 	do {
-		if ((reg.bytes[1] & mask) != 0){
+		if ((reg->bytes[1] & mask) != 0){
+			res += pow2;
+		}
+		pow2 = pow2 / 2;
+		mask = mask >> 1;
+	} while (mask != 0);
+
+	mask = 0x80;
+	do {
+		if ((reg->bytes[2] & mask) != 0){
 			res += pow2;
 		}
 		pow2 = pow2 / 2;
@@ -100,15 +146,7 @@ double binConvert(Register reg, double pow2) {
 	} while (mask != 0);
 	mask = 0x80;
 	do {
-		if ((reg.bytes[2] & mask) != 0){
-			res += pow2;
-		}
-		pow2 = pow2 / 2;
-		mask = mask >> 1;
-	} while (mask != 0);
-	mask = 0x80;
-	do {
-		if ((reg.bytes[3] & mask) != 0){
+		if ((reg->bytes[3] & mask) != 0){
 			res += pow2;
 		}
 		pow2 = pow2 / 2;
