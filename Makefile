@@ -1,11 +1,11 @@
 raspberryPowerMeter: main.o
-	gcc -O2  main.o -o raspberryPowerMeter -L. -lwiringPi -lncurses
+	gcc -O0 -g2  main.o -o raspberryPowerMeter -L. -lwiringPi -lncurses
 
 main.o: main.c
-	gcc -I. -O2 main.c -c -o main.o
+	gcc -I. -O0 -g2  main.c -c -o main.o
 
 wiringMock:
-	gcc -shared -I. -O2  -fpic wiringPiSPIMock.c  -Wl,-soname,libwiringPi.so -o libwiringPi.so
+	gcc -shared -I. -O0 -g2  -fpic wiringPiSPIMock.c  -Wl,-soname,libwiringPi.so -o libwiringPi.so
 
 lib: wiringMock
 
