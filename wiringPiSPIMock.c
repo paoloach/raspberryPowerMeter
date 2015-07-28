@@ -15,13 +15,13 @@ int  wiringPiSPISetup (int channel,  int freq){
 
 int wiringPiSPIDataRW(int channel, unsigned char * buffer, int size) {
 	if (size == 4){
-		int reg = (buffer[0] > 1) & 0x1F;
-		if (buffer[0] & 0x40){
+		int reg = (buffer[0] >> 1) & 0x1F;
+		if (!(buffer[0] & 0x40)){
 			switch(pageRegister){
 				case 0:
-					buffer[1] = (reg0[0] & 0xFF0000) >> 16;
-					buffer[2] = (reg0[0] & 0xFF00) >> 8;
-					buffer[3] = (reg0[0] & 0xFF);
+					buffer[1] = (reg0[reg] & 0xFF0000) >> 16;
+					buffer[2] = (reg0[reg] & 0xFF00) >> 8;
+					buffer[3] = (reg0[reg] & 0xFF);
 					return 4;
 				case 1:
 				case 2:
