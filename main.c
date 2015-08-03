@@ -11,7 +11,7 @@ union _Register {
 
 typedef union _Register Register;
 
-#define text_size 15
+#define text_size 20
 #define val_size  12;
 
 int col1 = 50;
@@ -25,6 +25,11 @@ int col4_v;
 int col5;
 int col5_v;
 
+int bit_row = 8;
+
+float voltFactor=1;
+float CurrFactor=1;
+
 
 unsigned int readRegister(unsigned char reg);
 Register getRegister(byte reg);
@@ -34,12 +39,9 @@ void writePage1(int reg, int value);
 char getcmd(void);
 void printHelp(void);
 void setPage0(void);
-void printIstantaneusCurrent(void);
-void printIstantaneusVolt(void);
-void printIstantaneusPower(void);
-void printRealPower(void);
-void printRMSVolt(void);
-void printRMSCurrent(void);
+void printConfiguration(void);
+void printCurrent(void);
+void printVolt(void);
 void printCurrentOffset(void);
 void printVoltOffset(void);
 void printCycleCount(void);
@@ -55,6 +57,8 @@ void printCurrentACOffset(void);
 void printVoltageACOffset(void);
 void printOperationMode(void);
 void printTemperature(void);
+void printPower();
+void printFloat(int y, int col, const char * text, double val);
 
 double binConvert(Register * reg, double pow2);
 double range_1_sign(Register * currentRegister);
@@ -69,7 +73,8 @@ int main() {
 	col4 = col3_v + val_size;
 	col4_v = col4+text_size;
 	col5 = col4_v + val_size;
-	col5_v = col5 + val_size;
+	col5_v = col5 + text_size;
+	unsigned char buffer[4];
 
 	
 	
@@ -91,16 +96,51 @@ int main() {
 				case 'q':
 					endwin();
 					return 0;
-			}
+				case 's':
+					buffer[0] = 0xE0;
+					wiringPiSPIDataRW(0,buffer, 1);
+					break;
+				case 'c':
+					buffer[0] = 0xE8;
+					wiringPiSPIDataRW(0,buffer,1);
+					break;
+				case '1':{
+						Register currentRegister = getRegister(0);
+						currentRegister.bytes[0] |= 0x40;
+						currentRegister.bytes[1] &= 0xFE;
+						wiringPiSPIDataRW(0,currentRegister.bytes,4);
+						break;
+					}
+				case '5':{
+						Register currentRegister = getRegister(0);
+						currentRegister.bytes[0] |= 0x40;
+						currentRegister.bytes[1] |= 0x01;
+						wiringPiSPIDataRW(0,currentRegister.bytes,4);
+						break;
+					}
+				case 'p':
+					buffer[0] = 0xC0;
+					wiringPiSPIDataRW(0,buffer,1);
+					break;
+				case 'r':  // reset
+					buffer[0] =0x80;
+					wiringPiSPIDataRW(0,buffer,1);
+					break;
+				case 'x':  // stand-by
+					buffer[0] =0x88;
+					wiringPiSPIDataRW(0,buffer,1);
+					break;
+				case 'z': // sleep
+					buffer[0] =0x90;
+					wiringPiSPIDataRW(0,buffer,1);
+					break;
+				}
 		}
 		refresh();
 		setPage0();
-		printIstantaneusCurrent();
-		printIstantaneusVolt();
-		printIstantaneusPower();
-		printRealPower();
-		printRMSVolt();
-		printRMSCurrent();
+		printConfiguration();
+		printCurrent();
+		printVolt();
 		printCurrentOffset();
 		printVoltOffset();
 		printCurrentGain();
@@ -108,9 +148,9 @@ int main() {
 		printCycleCount();
 		printEpsilon();
 		pulseRage();
-		printPowerOffset();
 		printStatus();
 		printMask();
+		printPower();
 		printCurrentACOffset();
 		printVoltageACOffset();
 		printOperationMode();
@@ -124,11 +164,15 @@ int main() {
 void printHelp(){
 	move(0,0);
 	printw("q for exit\n");
-	printw("0 read all registers page 0\n");
-	printw("1 read register page 1\n");
 	printw("s performe single computation cycle\n");
 	printw("c performe continuo compuation cycle\n");
+	printw("p power-up/HALT");
+	printw("r reset\n");
+	printw("x stand-by\n");
+	printw("z sleep\n");
 	printw("t set Temperature sensor gain or offset\n");
+	printw("1 set current gain to x10t\n");
+	printw("5 set current gain to x50t\n");
 }
 
 void setPage0(){
@@ -136,59 +180,108 @@ void setPage0(){
     wiringPiSPIDataRW(0,buffer,4);
 }
 
+
+
 void printIstantaneusCurrent(){
-	Register currentRegister = getRegister(7);
-	move(0,col1);
-	printw("    current %0.9f", range_1_sign(&currentRegister));
 	
 }
 
-void printIstantaneusVolt(){
-	Register currentRegister = getRegister(8);
-	mvprintw(0, col2,"volt");
-	mvprintw(0, col2_v,"%0.9f", range_1_sign(&currentRegister));
+void printVolt(){
+	Register voltReg = getRegister(8);
+	printFloat(0, col1, "Volt", range_1_sign(&voltReg));
+	voltReg = getRegister(12);
+	printFloat(0, col2, "RMS Volt", binConvert(&voltReg, 0.5));
+	voltReg = getRegister(23);
+	printFloat(0, col3, "Peak Volt", range_1_sign(&voltReg));
 }
 
-void printIstantaneusPower(){
-	Register currentRegister = getRegister(9);
-	mvprintw(0, col3,"inst. power");
-	mvprintw(0, col3_v,"%0.9f", range_1_sign(&currentRegister));
+
+void printCurrent(void){
+	Register currentRegister = getRegister(7);
+	printFloat(1, col1, "Current", range_1_sign(&currentRegister));
+	currentRegister = getRegister(11);
+	printFloat(1, col2, "RMS Current", binConvert(&currentRegister, 0.5));
+	currentRegister = getRegister(22);
+	printFloat(1, col3, "Peak Current", range_1_sign(&currentRegister));
+
 }
 
-void printRealPower(void) {
-	Register currentRegister = getRegister(10);
-	mvprintw(1, col3, "real power");
-	mvprintw(1, col3_v, "%0.9f", range_1_sign(&currentRegister));
+
+// volt calibraion
+void printVoltGain(void) {
+	Register voltRegister = getRegister(4);
+	printFloat(5, col1, "Volt. Gain", binConvert(&voltRegister,2));
 }
 
-void printRMSVolt(void){
-	Register currentRegister = getRegister(11);
-	mvprintw(1, col1, "rms current %0.9f", binConvert(&currentRegister, 0.5));
+void printVoltOffset(void) {
+	Register voltRegister = getRegister(3);
+	printFloat(5, col2, "Volt. Offset", range_1_sign(&voltRegister));
 }
-void printRMSCurrent(void){
-	Register currentRegister = getRegister(12);
-	mvprintw(1, col2, "rms volt");
-	mvprintw(1, col2_v, "%0.9f", binConvert(&currentRegister, 0.5));
+
+void printVoltageACOffset(void) {
+	Register voltRegister = getRegister(17);
+	printFloat(5, col3, "Volt. AC Offset", range_1_sign(&voltRegister));
+}
+
+// current calibration
+void printCurrentGain(void) {
+	Register currentRegister = getRegister(2);
+	printFloat(6, col1, "Curr. Gain", binConvert(&currentRegister,2));
 }
 
 void printCurrentOffset(void) {
 	Register currentRegister = getRegister(1);
-	mvprintw(0, col4, "current offset %0.9f", range_1_sign(&currentRegister));
+	printFloat(6, col2, "Curr. Offset", range_1_sign(&currentRegister));
 }
 
-void printVoltOffset(void) {
-	Register currentRegister = getRegister(3);
-	mvprintw(0, col5, "voltage offset %0.9f", range_1_sign(&currentRegister));
+void printCurrentACOffset(void) {
+	Register powerRegister = getRegister(16);
+	printFloat(6, col3, "Curr. AC Offset", range_1_sign(&powerRegister));
 }
 
-void printCurrentGain(void) {
-	Register currentRegister = getRegister(2);
-	mvprintw(1, col4, "current gain   %0.9f", binConvert(&currentRegister,2));
+
+
+void printPower(){
+	Register powerReg = getRegister(9);
+	printFloat(2, col1, "Inst Power", range_1_sign(&powerReg));
+	powerReg = getRegister(14);
+	printFloat(4, col5, "Power Offset", range_1_sign(&powerReg));
+	powerReg = getRegister(10);
+	printFloat(3, col1, "Real Power", range_1_sign(&powerReg));
+	powerReg = getRegister(21);
+	printFloat(2, col2, "Inst React Power", range_1_sign(&powerReg));
+	powerReg = getRegister(20);
+	printFloat(3, col2, "Mean React Power", range_1_sign(&powerReg));
+	powerReg = getRegister(24);
+	printFloat(3, col3, "Reactive Power(Q)", range_1_sign(&powerReg));
+	powerReg = getRegister(25);
+	printFloat(3, col4, "Power Factor(PF)", range_1_sign(&powerReg));
+	powerReg = getRegister(27);
+	printFloat(3, col5, "Apparent Power(S)", range_1_sign(&powerReg));
+	powerReg = getRegister(29);
+	printFloat(2, col3, "Harm. Power(Ph)", range_1_sign(&powerReg));
+	powerReg = getRegister(30);
+	printFloat(2, col4, "Fund Active Power(Pf)", range_1_sign(&powerReg));
+	powerReg = getRegister(31);
+	printFloat(2, col5, "Fund Reactive Power(Qh)", range_1_sign(&powerReg));
 }
 
-void printVoltGain(void) {
-	Register currentRegister = getRegister(4);
-	mvprintw(1, col5, "voltage gain   %0.9f", binConvert(&currentRegister,2));
+void printCycleCount(void) {
+	Register countRegister = getRegister(5);
+	unsigned int val = (((unsigned int)countRegister.bytes[1]) * 0x10000)+(((unsigned int)countRegister.bytes[2]) * 0x100)+(((unsigned int)countRegister.bytes[3]));
+	mvprintw(4, col1, "Cycle Count %d", val);
+}
+
+void pulseRage(void) {
+	Register pulseRegister = getRegister(6);
+	mvprintw(4, col2, "pulse RateE");
+	mvprintw(4, col2_v, "%0.9f", range_1_sign(&pulseRegister));
+}
+
+void printEpsilon(void){
+	Register pulseRegister = getRegister(13);
+	mvprintw(4, col3, "epsilon");
+	mvprintw(4, col3_v, "%0.9f", range_1_sign(&pulseRegister));
 }
 
 void printTemperature(void) {
@@ -196,48 +289,20 @@ void printTemperature(void) {
 	int sign = (currentRegister.bytes[3] & 0x80) ? -1 : 1;
 	currentRegister.bytes[3] = currentRegister.bytes[3] & 0x7F;
 	double val = binConvert(&currentRegister,128) * sign;;
-	mvprintw(2, col5, "Temperature");
-	mvprintw(2, col5_v, "%0.9f", val);
+	mvprintw(4, col4, "Temperature");
+	mvprintw(4, col4_v, "%0.9f", val);
 }
 
-void printCycleCount(void) {
-	Register countRegister = getRegister(5);
-	unsigned int val = (((unsigned int)countRegister.bytes[1]) * 0x10000)+(((unsigned int)countRegister.bytes[2]) * 0x100)+(((unsigned int)countRegister.bytes[3]));
-	mvprintw(2, col1, "Cycle Count %d", val);
+
+
+void printFloat(int y, int col, const char * text, double val){
+	mvprintw(y, col, text);
+	mvprintw(y, col+text_size, "%0.9f", val);
 }
 
-void pulseRage(void) {
-	Register pulseRegister = getRegister(6);
-	mvprintw(2, col2, "pulse RateE");
-	mvprintw(2, col2_v, "%0.9f", range_1_sign(&pulseRegister));
-}
-
-void printEpsilon(void){
-	Register pulseRegister = getRegister(13);
-	mvprintw(2, col3, "epsilon");
-	mvprintw(2, col3_v, "%0.9f", range_1_sign(&pulseRegister));
-}
-
-void printPowerOffset(void) {
-	Register powerRegister = getRegister(14);
-	mvprintw(2, col4, "power offset");
-	mvprintw(2, col4_v, "%0.9f", range_1_sign(&powerRegister));
-}
-
-void printCurrentACOffset(void) {
-	Register powerRegister = getRegister(16);
-	mvprintw(3, col1, "I AC offset");
-	mvprintw(3, col1_v, "%0.9f", range_1_sign(&powerRegister));
-}
-void printVoltageACOffset(void) {
-	Register powerRegister = getRegister(17);
-	mvprintw(3, col2, "V AC offset");
-	mvprintw(3, col2_v, "%0.9f", range_1_sign(&powerRegister));
-
-}
 
 void printOperationMode(void){
-	int row=6;
+	int row=bit_row+1;
 	Register status = getRegister(18);
 	if (status.bytes[2] & 0x02){
 		attrset(A_REVERSE);
@@ -291,7 +356,7 @@ void printOperationMode(void){
 }
 
 void printStatus(void) {
-	int row=5;
+	int row=bit_row;
 	Register status = getRegister(15);
 	if (status.bytes[1] & 0x80){
 		attrset(A_REVERSE);
@@ -398,9 +463,53 @@ void printStatus(void) {
 void printMask(void) {
 	Register countRegister = getRegister(26);
 	unsigned int val = (((unsigned int)countRegister.bytes[1]) * 0x10000)+(((unsigned int)countRegister.bytes[2]) * 0x100)+(((unsigned int)countRegister.bytes[3]));
-	mvprintw(5, col4, "Status mask", val);
-	mvprintw(5, col4_v, "0x%06d", val);
+	mvprintw(bit_row, col4, "Status mask", val);
+	mvprintw(bit_row, col4_v, "0x%06d", val);
 }
+
+void printConfiguration(void) {
+	int row=bit_row+2;
+	Register currentRegister = getRegister(0);
+	
+	unsigned int phaseCompensasion = (currentRegister.bytes[1] & 0xFE) > 1;
+	if (phaseCompensasion & 0x40){
+		phaseCompensasion = -(phaseCompensasion & 0x3F)+1;
+	}
+	
+	unsigned gain = currentRegister.bytes[1] & 0x01;
+	unsigned EWA = currentRegister.bytes[2] & 0x80;
+	unsigned imode = (currentRegister.bytes[2] & 0x18) > 3;
+	unsigned icpu =  (currentRegister.bytes[3] & 0x10) != 0;
+	unsigned clockDivider = (currentRegister.bytes[3] & 0x0F);
+	
+	mvprintw(row, col1, "Phase Comp");
+	mvprintw(row, col1_v, "%d", phaseCompensasion);
+	mvprintw(row, col2, "gain");
+	mvprintw(row, col2+5, "%d", gain);
+	mvprintw(row, col2+8, "EWA");
+	mvprintw(row, col2+12, "%d", EWA);
+	mvprintw(row, col2+14, "icpu");
+	mvprintw(row, col2+19, "%d", icpu);
+	mvprintw(row, col3, "imode");
+	switch(imode){
+		case 0:
+			mvprintw(row, col3_v, "active low");
+			break;
+		case 1:
+			mvprintw(row, col3_v, "active hight");
+			break;
+		case 2:
+			mvprintw(row, col3_v, "H to L pulse");
+			break;
+		case 3:
+			mvprintw(row, col3_v, "L to H pulse");
+			break;
+	}
+	mvprintw(row, col5, "Clock divider");
+	mvprintw(row, col5_v, "%d", clockDivider);
+}
+
+
 
 double range_1_sign(Register * currentRegister){
 	int sign = currentRegister->bytes[1] & 0x80;
