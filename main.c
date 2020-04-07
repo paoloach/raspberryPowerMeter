@@ -28,7 +28,7 @@ int col5_v;
 int bit_row = 8;
 
 float voltFactor=1;
-float CurrFactor=1;
+float currentFactor=1;
 
 
 unsigned int readRegister(unsigned char reg);
@@ -59,6 +59,8 @@ void printOperationMode(void);
 void printTemperature(void);
 void printPower();
 void printFloat(int y, int col, const char * text, double val);
+
+void printReal();
 
 double binConvert(Register * reg, double pow2);
 double range_1_sign(Register * currentRegister);
@@ -118,6 +120,51 @@ int main() {
 						wiringPiSPIDataRW(0,currentRegister.bytes,4);
 						break;
 					}
+				case 'h': {
+						Register reg = getRegister(18);
+						reg.bytes[0] = 0x40  + 18*2;
+						if (reg.bytes[3] & 0x40) {
+							reg.bytes[3]  &= 0xBF;
+						} else {
+							reg.bytes[3] |= 0x40;
+						}
+						wiringPiSPIDataRW(0,reg.bytes,4);
+						break;
+				}
+				case 'j': {
+						Register reg = getRegister(18);
+						reg.bytes[0] = 0x40 + 18*2;
+						if (reg.bytes[3] & 0x20) {
+							reg.bytes[3]  &= 0xDF;
+						} else {
+							reg.bytes[3] |= 0x20;
+						}
+						wiringPiSPIDataRW(0,reg.bytes,4);
+						break;
+					}
+				case 'f': {
+						Register reg = getRegister(18);
+						reg.bytes[0] = 0x40 + 18*2;
+						if (reg.bytes[3] & 0x10) {
+							reg.bytes[3]  &= 0xEF;
+						} else {
+							reg.bytes[3] |= 0x10;
+						}
+						wiringPiSPIDataRW(0,reg.bytes,4);
+						break;
+					}
+				case 'a': {
+						Register reg = getRegister(18);
+						reg.bytes[0] = 0x40 + 18*2;
+						if (reg.bytes[3] & 0x01) {
+							reg.bytes[3]  &= 0xFE;
+						} else {
+							reg.bytes[3] |= 0x01;
+						}
+						mvprintw(20,0,"bytes: %02X %02X %02X %02X", reg.bytes[0],reg.bytes[1],reg.bytes[2],reg.bytes[3]);
+						wiringPiSPIDataRW(0,reg.bytes,4);
+						break;
+					}
 				case 'p':
 					buffer[0] = 0xC0;
 					wiringPiSPIDataRW(0,buffer,1);
@@ -134,6 +181,36 @@ int main() {
 					buffer[0] =0x90;
 					wiringPiSPIDataRW(0,buffer,1);
 					break;
+				case 'v': // volt factor
+					nocbreak();
+					refresh();
+					nodelay(stdscr, FALSE);
+					echo();
+					refresh();
+					move(12, col3_v);
+					mvprintw(12, col3_v, "            ");
+					refresh();
+					mvscanw(12,  col3_v, "%f", &voltFactor);
+					refresh();
+					mvprintw(12, col3_v, "%0.9f", voltFactor);
+					refresh();
+					cbreak();
+					noecho();
+					nodelay(stdscr, TRUE);
+					break;
+				case 'i': // current factor
+					nocbreak();
+					refresh();
+					nodelay(stdscr, FALSE);
+					echo();
+					move(12, col4_v);
+					mvprintw(12, col4_v, "            ");
+					refresh();
+					mvscanw(12,  col4_v, "%f", &currentFactor);
+					cbreak();
+					noecho();
+					nodelay(stdscr, TRUE);
+					
 				}
 		}
 		refresh();
@@ -155,6 +232,7 @@ int main() {
 		printVoltageACOffset();
 		printOperationMode();
 		printTemperature();
+		printReal();
 		i++;
 	}
 	endwin();
@@ -173,6 +251,12 @@ void printHelp(){
 	printw("t set Temperature sensor gain or offset\n");
 	printw("1 set current gain to x10t\n");
 	printw("5 set current gain to x50t\n");
+	printw("v set volt factor\n");
+	printw("i set current factor\n");
+	printw("h toggle high-pass filter on current channel\n");
+	printw("j toggle high-pass filter on volt channel\n");
+	printw("f toggle IIR compesation filter\n");
+	printw("a toggle AFC\n");
 }
 
 void setPage0(){
@@ -192,6 +276,7 @@ void printVolt(){
 	voltReg = getRegister(12);
 	printFloat(0, col2, "RMS Volt", binConvert(&voltReg, 0.5));
 	voltReg = getRegister(23);
+	mvprintw(20,20,"%02X %02X %02X %02X", voltReg.bytes[0], voltReg.bytes[1], voltReg.bytes[2], voltReg.bytes[3]);
 	printFloat(0, col3, "Peak Volt", range_1_sign(&voltReg));
 }
 
@@ -202,6 +287,7 @@ void printCurrent(void){
 	currentRegister = getRegister(11);
 	printFloat(1, col2, "RMS Current", binConvert(&currentRegister, 0.5));
 	currentRegister = getRegister(22);
+	mvprintw(21,20,"%02X %02X %02X %02X", currentRegister.bytes[0], currentRegister.bytes[1], currentRegister.bytes[2], currentRegister.bytes[3]);
 	printFloat(1, col3, "Peak Current", range_1_sign(&currentRegister));
 
 }
@@ -242,28 +328,31 @@ void printCurrentACOffset(void) {
 
 
 void printPower(){
+	double converFactor = voltFactor/16/currentFactor;
+	
+	
 	Register powerReg = getRegister(9);
-	printFloat(2, col1, "Inst Power", range_1_sign(&powerReg));
+	printFloat(2, col1, "Inst Power", converFactor*range_1_sign(&powerReg));
 	powerReg = getRegister(14);
-	printFloat(4, col5, "Power Offset", range_1_sign(&powerReg));
+	printFloat(4, col5, "Power Offset", converFactor*range_1_sign(&powerReg));
 	powerReg = getRegister(10);
-	printFloat(3, col1, "Real Power", range_1_sign(&powerReg));
+	printFloat(3, col1, "Real Power", converFactor*range_1_sign(&powerReg));
 	powerReg = getRegister(21);
-	printFloat(2, col2, "Inst React Power", range_1_sign(&powerReg));
+	printFloat(2, col2, "Inst React Power", converFactor*range_1_sign(&powerReg));
 	powerReg = getRegister(20);
-	printFloat(3, col2, "Mean React Power", range_1_sign(&powerReg));
+	printFloat(3, col2, "Mean React Power", converFactor*range_1_sign(&powerReg));
 	powerReg = getRegister(24);
-	printFloat(3, col3, "Reactive Power(Q)", range_1_sign(&powerReg));
+	printFloat(3, col3, "Reactive Power(Q)", converFactor*range_1_sign(&powerReg));
 	powerReg = getRegister(25);
-	printFloat(3, col4, "Power Factor(PF)", range_1_sign(&powerReg));
+	printFloat(3, col4, "Power Factor(PF)", converFactor*range_1_sign(&powerReg));
 	powerReg = getRegister(27);
-	printFloat(3, col5, "Apparent Power(S)", range_1_sign(&powerReg));
+	printFloat(3, col5, "Apparent Power(S)", converFactor*range_1_sign(&powerReg));
 	powerReg = getRegister(29);
-	printFloat(2, col3, "Harm. Power(Ph)", range_1_sign(&powerReg));
+	printFloat(2, col3, "Harm. Power(Ph)", converFactor*range_1_sign(&powerReg));
 	powerReg = getRegister(30);
-	printFloat(2, col4, "Fund Active Power(Pf)", range_1_sign(&powerReg));
+	printFloat(2, col4, "Fund Active Power(Pf)", converFactor*range_1_sign(&powerReg));
 	powerReg = getRegister(31);
-	printFloat(2, col5, "Fund Reactive Power(Qh)", range_1_sign(&powerReg));
+	printFloat(2, col5, "Fund Reactive Power(Qh)", converFactor*range_1_sign(&powerReg));
 }
 
 void printCycleCount(void) {
@@ -285,12 +374,15 @@ void printEpsilon(void){
 }
 
 void printTemperature(void) {
-	Register currentRegister = getRegister(19);
-	int sign = (currentRegister.bytes[3] & 0x80) ? -1 : 1;
-	currentRegister.bytes[3] = currentRegister.bytes[3] & 0x7F;
-	double val = binConvert(&currentRegister,128) * sign;;
-	mvprintw(4, col4, "Temperature");
-	mvprintw(4, col4_v, "%0.9f", val);
+	Register statusRegister = getRegister(15);
+	if (statusRegister.bytes[3] & 0x80){
+		Register reg = getRegister(19);
+		int sign = (reg.bytes[3] & 0x80) ? -1 : 1;
+		reg.bytes[3] = reg.bytes[3] & 0x7F;
+		double val = binConvert(&reg,128) * sign;;
+		mvprintw(4, col4, "Temperature");
+		mvprintw(4, col4_v, "%0.9f", val);
+	}
 }
 
 
@@ -306,51 +398,71 @@ void printOperationMode(void){
 	Register status = getRegister(18);
 	if (status.bytes[2] & 0x02){
 		attrset(A_REVERSE);
+	} else {
+		attrset(A_NORMAL);
 	}
 	mvprintw(row,col1, "E2MODE");
 	
 	if (status.bytes[2] & 0x01){
 		attrset(A_REVERSE);
+	}else {
+		attrset(A_NORMAL);
 	}
 	mvprintw(row,col1+7, "XVDEL");
 	
 	if (status.bytes[3] & 0x80){
 		attrset(A_REVERSE);
+	}else {
+		attrset(A_NORMAL);
 	}
 	mvprintw(row,col1+13, "XIDEL");
 	
 	if (status.bytes[3] & 0x40){
 		attrset(A_REVERSE);
+	}else {
+		attrset(A_NORMAL);
 	}
 	mvprintw(row,col1+19, "IHPF");
 
 	if (status.bytes[3] & 0x20){
 		attrset(A_REVERSE);
+	}else {
+		attrset(A_NORMAL);
 	}
 	mvprintw(row,col1+24, "VHPF");
 	
 	if (status.bytes[3] & 0x10){
 		attrset(A_REVERSE);
+	}else {
+		attrset(A_NORMAL);
 	}
 	mvprintw(row,col1+29, "IIR");
 	
 	if (status.bytes[3] & 0x08){
 		attrset(A_REVERSE);
+	}else {
+		attrset(A_NORMAL);
 	}
 	mvprintw(row,col1+33, "E3MODE1");
 	
 	if (status.bytes[3] & 0x04){
 		attrset(A_REVERSE);
+	}else {
+		attrset(A_NORMAL);
 	}
 	mvprintw(row,col1+41, "E3MODE0");
 	
 	if (status.bytes[3] & 0x02){
 		attrset(A_REVERSE);
+	}else {
+		attrset(A_NORMAL);
 	}
 	mvprintw(row,col1+49, "POS");
 	
 	if (status.bytes[3] & 0x01){
 		attrset(A_REVERSE);
+	}else {
+		attrset(A_NORMAL);
 	}
 	mvprintw(row,col1+53, "AFC");
 }
@@ -510,12 +622,31 @@ void printConfiguration(void) {
 }
 
 
+void printReal() {
+	Register reg = getRegister(12);
+	double real = binConvert(&reg, 0.5)*voltFactor/4;
+	
+	printFloat(12, col1, "Real Volt",real);
+	
+	reg = getRegister(11);
+	real = (binConvert(&reg, 0.5)/4)/currentFactor;
+	
+	printFloat(12, col2, "Real current",real);
+	printFloat(12, col3, "Volt factor",voltFactor);
+	printFloat(12, col4, "Shunt Res",currentFactor);
+	
+}
+
 
 double range_1_sign(Register * currentRegister){
 	int sign = currentRegister->bytes[1] & 0x80;
-	currentRegister->bytes[1] = currentRegister->bytes[1] & 0x7F;
+	if (sign){
+		currentRegister->bytes[1] = currentRegister->bytes[1] ^ 0xFF;
+		currentRegister->bytes[2] = currentRegister->bytes[2] ^ 0xFF;
+		currentRegister->bytes[3] = currentRegister->bytes[3] ^ 0xFF;
+	}
 	double current = binConvert(currentRegister, 1);
-	if (currentRegister->bytes[1] & 0x80){
+	if (sign){
 		current = -current;
 	}
 	return current;
@@ -553,94 +684,94 @@ double binConvert(Register * reg, double pow2) {
 	return res;
 }
 
-int  spi(){
-    int result;
+// int  spi(){
+//     int result;
+// 
+//     int initSPI =  wiringPiSPISetup (0, 500000) ;
+//     printf("init is %d\n", initSPI);
+//    unsigned char buffer[4];
+// 
+// 	
+//    printf("q for exit\n");
+//    printf("0 read all registers page 0\n");
+//    printf("1 read register page 1\n");
+//    printf("s performe single computation cycle\n");
+//    printf("c performe continuo compuation cycle\n");
+//    printf("t set Temperature sensor gain or offset\n");
+//  
+// 
+// 
+//    while(1){
+// 	 
+// 	char cmd = getcmd();
+// 	int reg;
+// 	int value;
+// 
+// 	switch(cmd) {
+// 	    case 'q':
+// 		return 0;
+// 	   case '0':
+// 		readAllRegister();
+// 		break;
+// 	   case 's':
+// 		buffer[0] = 0xE0;
+// 		wiringPiSPIDataRW(0,buffer, 1);
+// 		break;
+// 	   case 'c':
+// 		buffer[0] = 0xE8;
+// 		wiringPiSPIDataRW(0,buffer,1);
+// 		break;
+// 	   case '1':
+// 		readPage1();
+// 		break;
+// 	   case 't':
+// 		   printf("\ng gain, o offset");
+// 		   cmd = getcmd();
+// 		   
+// 		   if (cmd == 'g'){
+// 			   reg = 2;
+// 		   } else if (cmd == 'o'){
+// 			   reg = 3;
+// 		   } else {
+// 			   printf("invalid chose\n");
+// 			   break;
+// 		   }
+// 		   
+// 		   scanf("%d",&value);
+// 		   writePage1(reg,value);
+// 		   break;
+// 			
+// 	}
+//    }
+// 
+// 
+// }
 
-    int initSPI =  wiringPiSPISetup (0, 500000) ;
-    printf("init is %d\n", initSPI);
-   unsigned char buffer[4];
+// void writePage1(int reg, int value){
+// 	unsigned char bufferPage[4] = {0x7E,0x00,0x00,0x1};
+// 	const unsigned char msb = (value & 0xFF0000) >> 16;
+// 	const unsigned char mediumByte = (value & 0xFF00) >> 8;
+// 	const unsigned char lowByte = value & 0xFF;
+// 	unsigned char bufferReg[4] = {0x40 | (reg << 1),msb, mediumByte, lowByte};
+// 	printf("%02X %02X %02X %02X\n", bufferReg[0], bufferReg[1], bufferReg[2], bufferReg[3]);
+// 	wiringPiSPIDataRW(0,bufferPage,4);
+// 	wiringPiSPIDataRW(0,bufferReg,4);
+// }
 
-	
-   printf("q for exit\n");
-   printf("0 read all registers page 0\n");
-   printf("1 read register page 1\n");
-   printf("s performe single computation cycle\n");
-   printf("c performe continuo compuation cycle\n");
-   printf("t set Temperature sensor gain or offset\n");
- 
-
-
-   while(1){
-	 
-	char cmd = getcmd();
-	int reg;
-	int value;
-
-	switch(cmd) {
-	    case 'q':
-		return 0;
-	   case '0':
-		readAllRegister();
-		break;
-	   case 's':
-		buffer[0] = 0xE0;
-		wiringPiSPIDataRW(0,buffer, 1);
-		break;
-	   case 'c':
-		buffer[0] = 0xE8;
-		wiringPiSPIDataRW(0,buffer,1);
-		break;
-	   case '1':
-		readPage1();
-		break;
-	   case 't':
-		   printf("\ng gain, o offset");
-		   cmd = getcmd();
-		   
-		   if (cmd == 'g'){
-			   reg = 2;
-		   } else if (cmd == 'o'){
-			   reg = 3;
-		   } else {
-			   printf("invalid chose\n");
-			   break;
-		   }
-		   
-		   scanf("%d",&value);
-		   writePage1(reg,value);
-		   break;
-			
-	}
-   }
-
-
-}
-
-void writePage1(int reg, int value){
-	unsigned char bufferPage[4] = {0x7E,0x00,0x00,0x1};
-	const unsigned char msb = (value & 0xFF0000) >> 16;
-	const unsigned char mediumByte = (value & 0xFF00) >> 8;
-	const unsigned char lowByte = value & 0xFF;
-	unsigned char bufferReg[4] = {0x40 | (reg << 1),msb, mediumByte, lowByte};
-	printf("%02X %02X %02X %02X\n", bufferReg[0], bufferReg[1], bufferReg[2], bufferReg[3]);
-	wiringPiSPIDataRW(0,bufferPage,4);
-	wiringPiSPIDataRW(0,bufferReg,4);
-}
-
-void readPage1(void){
-    unsigned char buffer[4] = {0x7E,0x00,0x00,0x1};
-    wiringPiSPIDataRW(0,buffer,4);
-    printf("Energy Pulse Output Width: -->");
-    readRegister(0);
-    printf("No Load Threshold: --> ");
-    readRegister(1);
-    printf("Temperature sensor gain: --> ");
-    readRegister(2);
-    printf("Temperature Sensor offset: --> ");
-    readRegister(3);
-        
-}
-
+// void readPage1(void){
+//     unsigned char buffer[4] = {0x7E,0x00,0x00,0x1};
+//     wiringPiSPIDataRW(0,buffer,4);
+//     printf("Energy Pulse Output Width: -->");
+//     readRegister(0);
+//     printf("No Load Threshold: --> ");
+//     readRegister(1);
+//     printf("Temperature sensor gain: --> ");
+//     readRegister(2);
+//     printf("Temperature Sensor offset: --> ");
+//     readRegister(3);
+//         
+// }
+/*
 void readAllRegister(void) {
 	int i;
     unsigned char buffer[4] = {0x7E,0x00,0x00,0x0};
@@ -650,7 +781,7 @@ void readAllRegister(void) {
         printf("read register %d) --> ", i);
         readRegister(i);
     }
-}
+}*/
 
 unsigned int  readRegister(unsigned char reg){
     unsigned char buffer[4] = {reg<<1, 0xFF, 0xFF,0xFF};
@@ -674,10 +805,10 @@ Register getRegister(byte reg) {
     return result;
 }
 
-char getcmd(void) {
-	char cmd =0;
-	do {
-		cmd = getchar();
-	} while (cmd < 32);
-	return cmd;
-}
+// char getcmd(void) {
+// 	char cmd =0;
+// 	do {
+// 		cmd = getchar();
+// 	} while (cmd < 32);
+// 	return cmd;
+// }
